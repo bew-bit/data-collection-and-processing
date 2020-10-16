@@ -12,23 +12,49 @@ from bs4 import BeautifulSoup as bs
 import requests
 import pandas as pd
 from pprint import pprint
+import re
 
-#https://hh.ru/search/vacancy?clusters=true&area=1&enable_snippets=true&salary=&st=searchVacancy&text=системный+аналитик&page=
+#https://hh.ru/vacancies/analyst?page=
 main_link = 'https://hh.ru'
-params = {'clusters':'true',
-          'area':'1',
-          'enable_snippets':'true',
-          'salary':'',
-          'st':'searchVacancy',
-          'text':'системный+аналитик',
-          'page':''}
+params = {'page':''}
 headers = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36 Edg/86.0.622.38'}
-response = requests.get(main_link+'/search/vacancy',params=params,headers=headers)
+response = requests.get(main_link+'/vacancies/analyst',params=params,headers=headers)
 soup = bs(response.text,'html.parser')
-vacancy_list = soup.findAll('div',{'class':'vacancy-serp-item__row vacancy-serp-item__row_header'})
+vacancy_list = soup.findAll('div', {'class':'vacancy-serp-item'})
 
 vacancies = []
 for vacancy in vacancy_list:
     vacancy_date = {}
-    vacancy_name = vacancy.find('span', {'class': 'resume-search-item__name'}).text
+
+    vacancy_name = vacancy.find('span', {'class': 'resume-search-item__name'}).getText()
     vacancy_date['vacancy_name'] = vacancy_name
+
+    vacancy_compensation = vacancy.find('span',{'data-qa':'vacancy-serp__vacancy-compensation'}).getText()
+    if not vacancy_compensation:
+        vacancy_compensation_min = None
+        vacancy_compensation_max = None
+        vacancy_compensation_currency = None
+    else:
+        vacancy_compensation = re.split(r'\s|-', vacancy_compensation)
+
+        if vacancy_compensation[0] == 'до':
+            vacancy_compensation_min = None
+            vacancy_compensation_max = int(vacancy_compensation[1]+vacancy_compensation[2])
+        elif vacancy_compensation[0] == 'от':
+            vacancy_compensation_min = int(vacancy_compensation[1]+vacancy_compensation[2])
+            vacancy_compensation_max = None
+        else:
+            vacancy_compensation_min = int(vacancy_compensation[0]+vacancy_compensation[1])
+            vacancy_compensation_max = int(vacancy_compensation[2]+vacancy_compensation[3])
+
+        vacancy_compensation_currency = vacancy_compensation[4]
+
+    vacancy_date['vacancy_compensation_min'] = vacancy_compensation_min
+    vacancy_date['vacancy_compensation_max'] = vacancy_compensation_max
+    vacancy_date['vacancy_compensation_currency'] = vacancy_compensation_currency
+
+    vacancy_link = vacancy.find('a', {'class': 'bloko-link HH-LinkModifier'})['href']
+    vacancy_date['vacancy_link'] = vacancy_link
+    vacancy_date['site'] = 'hh.ru'
+
+df = pd.DataFrame(vacancy_date)
